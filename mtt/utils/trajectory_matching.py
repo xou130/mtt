@@ -29,7 +29,7 @@ class TrajectoryMatcher:
         self.trajectory_weight = config.trajectory_weight
         self.distance_metric = config.trajectory_distance
         
-        # 验证距离度量参数
+        # Validate distance metric parameter
         if self.distance_metric not in ['mse', 'cosine', 'lpips']:
             raise ValueError(f"Unsupported distance metric: {self.distance_metric}")
         
@@ -48,12 +48,12 @@ class TrajectoryMatcher:
             List[float]: List of trajectory sampling points, values between [0, 1]
         """
         if self.trajectory_points <= 1:
-            return [1.0]  # 只采样最终状态
+            return [1.0]  # Only sample final state
         
-        # 等间隔采样，确保包括起点和终点
+        # Uniform sampling, ensuring start and end points are included
         points = []
         for i in range(self.trajectory_points):
-            # 非线性采样，更集中在后期训练阶段
+            # Non-linear sampling, more concentrated in later training stages
             ratio = (i / (self.trajectory_points - 1)) ** 1.5
             points.append(ratio)
         
@@ -77,34 +77,34 @@ class TrajectoryMatcher:
         
         distances = []
         
-        # 遍历每个时间点的轨迹
+        # Iterate through trajectories at each time point
         for i in range(len(student_trajectory)):
             student_states = student_trajectory[i]
             teacher_states = teacher_trajectory[i]
             
-            # 计算每个层的距离
+            # Calculate distance for each layer
             layer_distances = []
             for s_state, t_state in zip(student_states, teacher_states):
                 if self.distance_metric == 'mse':
                     dist = F.mse_loss(s_state, t_state)
                 elif self.distance_metric == 'cosine':
-                    # 计算余弦相似度作为距离
+                    # Calculate cosine similarity as distance
                     s_normalized = F.normalize(s_state.view(-1), dim=0)
                     t_normalized = F.normalize(t_state.view(-1), dim=0)
                     dist = 1.0 - torch.dot(s_normalized, t_normalized)
                 elif self.distance_metric == 'lpips':
-                    # 简单实现类似LPIPS的感知距离
+                    # Simple implementation of LPIPS-like perceptual distance
                     s_flat = s_state.view(-1)
                     t_flat = t_state.view(-1)
                     dist = torch.mean(torch.abs(s_flat - t_flat) ** 2)
                 
                 layer_distances.append(dist)
             
-            # 计算该时间点的平均距离
+            # Calculate average distance for this time point
             time_point_distance = torch.mean(torch.stack(layer_distances))
             distances.append(time_point_distance)
         
-        # 计算所有时间点的总距离
+        # Calculate total distance across all time points
         total_distance = torch.mean(torch.stack(distances))
         return total_distance
     
@@ -125,7 +125,7 @@ class TrajectoryMatcher:
         Returns:
             List[torch.Tensor]: Hidden states of the model at various layers
         """
-        # 前向传播获取隐藏状态
+        # Forward pass to get hidden states
         with torch.no_grad():
             outputs = model(
                 inputs_embeds=inputs_embeds,
@@ -133,10 +133,10 @@ class TrajectoryMatcher:
                 output_hidden_states=True
             )
         
-        # 获取所有层的隐藏状态
+        # Get hidden states from all layers
         hidden_states = outputs.hidden_states
         
-        # 如果指定了层，则只提取指定的层
+        # If specific layers are specified, only extract those layers
         if layers_to_extract is not None:
             hidden_states = [hidden_states[i] for i in layers_to_extract]
         
@@ -160,15 +160,15 @@ class TrajectoryMatcher:
         
         losses = []
         
-        # 计算每个样本的轨迹损失
+        # Calculate trajectory loss for each sample
         for s_traj, t_traj in zip(student_trajectories, teacher_trajectories):
             traj_distance = self.compute_trajectory_distance(s_traj, t_traj)
             losses.append(traj_distance)
         
-        # 计算平均损失
+        # Calculate average loss
         avg_loss = torch.mean(torch.stack(losses))
         
-        # 应用权重
+        # Apply weight
         weighted_loss = avg_loss * self.trajectory_weight
         
         return weighted_loss
@@ -207,10 +207,10 @@ def compute_combined_loss(
     Returns:
         torch.Tensor: Combined loss
     """
-    # 基础损失：交叉熵 + 蒸馏
+    # Base loss: cross-entropy + distillation
     base_loss = (1 - alpha) * ce_loss + alpha * distillation_loss
     
-    # 如果使用轨迹损失，则添加轨迹损失
+    # If using trajectory loss, add trajectory loss
     if use_trajectory and trajectory_loss is not None:
         total_loss = base_loss + trajectory_loss
     else:
@@ -241,16 +241,16 @@ def collect_trajectories(
     Returns:
         Dict: Dictionary containing student and teacher trajectories
     """
-    # 创建轨迹匹配器
+    # Create trajectory matcher
     trajectory_matcher = create_trajectory_matcher(config)
     
-    # 确定要提取的层
+    # Determine layers to extract
     layers_to_extract = list(range(config.layers_to_distill))
     
-    # 如果使用子集匹配，调整要提取的层
+    # If using subset matching, adjust layers to extract
     subset_selection = None
     if config.use_subset_matching and subset_matcher is not None:
-        # 获取教师模型的隐藏状态用于子集选择
+        # Get teacher model hidden states for subset selection
         with torch.no_grad():
             tea_outputs = model_tea(
                 inputs_embeds=inputs_embeds,
@@ -259,11 +259,11 @@ def collect_trajectories(
             )
         tea_hidden_states = tea_outputs.hidden_states
         
-        # 选择子集
+        # Select subset
         subset_selection = subset_matcher.select_subset(tea_hidden_states)
         layers_to_extract = subset_selection['layers']
     
-    # 提取教师模型轨迹
+    # Extract teacher model trajectory
     teacher_trajectory = trajectory_matcher.extract_model_trajectory(
         model_tea,
         inputs_embeds,
@@ -271,7 +271,7 @@ def collect_trajectories(
         layers_to_extract
     )
     
-    # 提取学生模型轨迹
+    # Extract student model trajectory
     student_trajectory = trajectory_matcher.extract_model_trajectory(
         model_stu,
         inputs_embeds,
@@ -279,7 +279,7 @@ def collect_trajectories(
         layers_to_extract
     )
     
-    # 包装成批次格式
+    # Package into batch format
     student_trajectories = [[student_trajectory]]
     teacher_trajectories = [[teacher_trajectory]]
     

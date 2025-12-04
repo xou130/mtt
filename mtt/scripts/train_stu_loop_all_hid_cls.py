@@ -63,7 +63,7 @@ def prepare_embeddings(config):
         model_pairs = load_model_pairs(config)
         config.initial_model_path = model_pairs[0][0]
     
-    # 加载初始模型以获取嵌入
+    # Load initial model to get embeddings
     logger.info(f"Loading initial model from {config.initial_model_path}...")
     from transformers import BertConfig
     config_bert = BertConfig.from_pretrained(config.initial_model_path)
@@ -104,26 +104,26 @@ def train_with_distillation(config, embeddings, labels, tokenizer):
     os.makedirs(config.output_dir, exist_ok=True)
     os.makedirs(config.log_dir, exist_ok=True)
     
-    # 加载模型对列表
+    # Load model pairs list
     model_pairs = load_model_pairs(config)
     num_model_pairs = len(model_pairs)
     logger.info(f"Loaded {num_model_pairs} model pairs for distillation")
     
-    # 创建训练调度
+    # Create training schedule
     schedule = create_training_schedule(config.num_distillation_epochs, num_model_pairs)
     logger.info(f"Training schedule created for {config.num_distillation_epochs} epochs")
     
-    # 初始化子集匹配器（如果启用）
+    # Initialize subset matcher (if enabled)
     subset_matcher = None
     if config.use_subset_matching:
         subset_matcher = create_subset_matcher(config)
         logger.info(f"Initialized subset matcher with strategy: {config.subset_strategy}")
     
-    # 初始化轨迹匹配器（如果启用）
+    # Initialize trajectory matcher (if enabled)
     if config.trajectory_matching:
         logger.info(f"Trajectory matching enabled with {config.trajectory_points} points")
     
-    # 迭代训练
+    # Iterative training
     for epoch in range(config.num_distillation_epochs):
         logger.info(f"Epoch {epoch + 1}/{config.num_distillation_epochs}")
         
@@ -132,14 +132,14 @@ def train_with_distillation(config, embeddings, labels, tokenizer):
         model_dir = model_pairs[select_trace]
         logger.info(f"Selected model pair: Student={model_dir[0]}, Teacher={model_dir[1]}")
         
-        # 加载学生模型
+        # Load student model
         model_stu = CustomBertForSequenceClassification.from_pretrained(model_dir[0])
         model_stu.to(config.device)
         
-        # 创建数据集和Trainer
+        # Create dataset and Trainer
         train_dataset = EmbeddingDataset(embeddings, labels)
         
-        # 定义训练参数
+        # Define training parameters
         training_args = TrainingArguments(
             output_dir=config.output_dir,
             save_strategy="no",
@@ -148,11 +148,11 @@ def train_with_distillation(config, embeddings, labels, tokenizer):
             logging_dir=config.log_dir,
             logging_steps=config.logging_steps,
             report_to="none",
-            fp16=torch.cuda.is_available(),  # 启用混合精度训练
+            fp16=torch.cuda.is_available(),  # Enable mixed precision training
             gradient_accumulation_steps=1
         )
         
-        # 创建Trainer
+        # Create Trainer
         trainer = Trainer(
             model=model_stu,
             args=training_args,
@@ -161,18 +161,18 @@ def train_with_distillation(config, embeddings, labels, tokenizer):
             data_collator=CustomDataCollator(),
         )
         
-        # 训练学生模型
+        # Train student model
         trainer.train()
         
-        # 保存训练后的学生模型
+        # Save trained student model
         temp_model_dir = os.path.join(config.output_dir, "temp_student_model")
         trainer.save_model(temp_model_dir)
         
-        # 清理内存
+        # Clean memory
         del model_stu, trainer
         torch.cuda.empty_cache()
         
-        # 加载训练后的学生模型和教师模型
+        # Load trained student model and teacher model
         model_stu = BertForSequenceClassification.from_pretrained(
             temp_model_dir, 
             output_hidden_states=True
@@ -182,24 +182,24 @@ def train_with_distillation(config, embeddings, labels, tokenizer):
             output_hidden_states=True
         ).to(config.device)
         
-        # 冻结模型参数
+        # Freeze model parameters
         for param in model_tea.parameters():
             param.requires_grad = False
         for param in model_stu.parameters():
             param.requires_grad = False
         
-        # 设置优化器（只优化嵌入）
+        # Set up optimizer (only optimize embeddings)
         optimizer = setup_optimizer([embeddings], lr=config.learning_rate)
         
-        # 准备注意力掩码（如果没有提供）
+        # Prepare attention mask (if not provided)
         batch_size, seq_len, _ = embeddings.shape
         attention_mask = torch.ones(batch_size, seq_len).to(config.device)
         
-        # 执行蒸馏步骤
+        # Execute distillation steps
         for step in range(config.distillation_steps):
             optimizer.zero_grad()
             
-            # 前向传播
+            # Forward pass
             output_1 = model_stu(
                 inputs_embeds=embeddings.to(config.device),
                 attention_mask=attention_mask
@@ -209,17 +209,17 @@ def train_with_distillation(config, embeddings, labels, tokenizer):
                 attention_mask=attention_mask
             )
             
-            # 计算基础蒸馏损失
+            # Calculate base distillation loss
             base_distillation_loss = compute_distillation_loss(
                 output_1, output_2, model_stu, model_tea, config.layers_to_distill
             )
             
-            # 初始化轨迹损失
+            # Initialize trajectory loss
             trajectory_loss = None
             
-            # 如果启用轨迹匹配，收集轨迹并计算轨迹损失
+            # If trajectory matching is enabled, collect trajectories and calculate trajectory loss
             if config.trajectory_matching:
-                # 收集轨迹
+                # Collect trajectories
                 trajectories = collect_trajectories(
                     model_stu,
                     model_tea,
@@ -229,7 +229,7 @@ def train_with_distillation(config, embeddings, labels, tokenizer):
                     subset_matcher
                 )
                 
-                # 计算轨迹损失
+                # Calculate trajectory loss
                 from mtt.utils import TrajectoryMatcher
                 matcher = TrajectoryMatcher(config)
                 trajectory_loss = matcher.compute_trajectory_loss(
@@ -237,7 +237,7 @@ def train_with_distillation(config, embeddings, labels, tokenizer):
                     trajectories['teacher_trajectories']
                 )
             
-            # 计算组合损失
+            # Calculate combined loss
             total_loss = compute_combined_loss(
                 output_1[0],  # ce_loss
                 base_distillation_loss,
@@ -246,15 +246,15 @@ def train_with_distillation(config, embeddings, labels, tokenizer):
                 use_trajectory=config.trajectory_matching
             )
             
-            # 反向传播和优化
+            # Backward pass and optimization
             total_loss.backward()
             
-            # 梯度裁剪
+            # Gradient clipping
             torch.nn.utils.clip_grad_norm_([embeddings], config.max_grad_norm)
             
             optimizer.step()
             
-            # 记录损失信息
+            # Log loss information
             loss_info = f"Distillation step {step + 1}/{config.distillation_steps}, "
             loss_info += f"Total Loss: {total_loss.item():.6f}, "
             loss_info += f"Distillation Loss: {base_distillation_loss.item():.6f}"
@@ -264,32 +264,32 @@ def train_with_distillation(config, embeddings, labels, tokenizer):
             
             logger.info(loss_info)
         
-        # 清理内存
+        # Clean memory
         del model_tea, model_stu, optimizer
         torch.cuda.empty_cache()
     
-    # 保存最终的嵌入
+    # Save final embeddings
     os.makedirs(os.path.dirname(config.save_embeddings_path), exist_ok=True)
     torch.save(embeddings, config.save_embeddings_path)
     logger.info(f"Final embeddings saved to {config.save_embeddings_path}")
 
 def main(config=None):
     """
-    主函数，执行整个训练流程
+    Main function to execute the entire training process
     
     Args:
-        config: 配置对象，如果为None则创建新的配置对象
+        config: Configuration object, creates a new one if None
     """
     try:
-        # 如果没有提供配置，则创建新的配置对象
+        # Create new configuration object if not provided
         if config is None:
             config = Config().parse_args()
         logger.info("Configuration prepared successfully")
         
-        # 准备嵌入
+        # Prepare embeddings
         embeddings, labels, tokenizer = prepare_embeddings(config)
         
-        # 执行训练和蒸馏
+        # Execute training and distillation
         train_with_distillation(config, embeddings, labels, tokenizer)
         
         logger.info("Training and distillation completed successfully!")
