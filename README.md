@@ -10,7 +10,7 @@ The TTM (Textual Trajectory Matching) framework implements an innovative text da
 
 The following figure illustrates the performance comparison and trajectory matching visualization of the TTM framework:
 
-![TTM Framework](figures/Figure2-ind.pdf)
+![TTM Framework](figures/Figure2-ind.png)
 
 ### Core Innovations
 
