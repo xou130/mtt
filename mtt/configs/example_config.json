@@ -1,0 +1,20 @@
+{
+    "output_dir": "./results_stu_syndata",
+    "log_dir": "./logs",
+    "cache_dir": "/home/dc/bert-mtt/dataset-distillation-with-attention-labels/cache_dataset",
+    "tokenizer_cache_dir": "/home/dc/bert-mtt/dataset-distillation-with-attention-labels/cache_model",
+    "num_positive_samples": 50,
+    "num_negative_samples": 50,
+    "num_train_epochs": 3,
+    "batch_size": 2,
+    "learning_rate": 0.1,
+    "distillation_steps": 2,
+    "num_distillation_epochs": 200,
+    "layers_to_distill": 12,
+    "save_embeddings_path": "/home/dc/bert-mtt/dataset-distillation-with-attention-labels/emb_all_looptrained.pt",
+    "model_pairs": [
+        ["/home/dc/bert-mtt/dataset-distillation-with-attention-labels/src/bert-base-uncased-finetuned-sst2-dev1/checkpoint-2105", "/home/dc/bert-mtt/dataset-distillation-with-attention-labels/src/bert-base-uncased-finetuned-sst2-dev1/checkpoint-12630"],
+        ["/home/dc/bert-mtt/dataset-distillation-with-attention-labels/src/bert-base-uncased-finetuned-sst2-dev1/checkpoint-4210", "/home/dc/bert-mtt/dataset-distillation-with-attention-labels/src/bert-base-uncased-finetuned-sst2-dev1/checkpoint-14735"],
+        ["/home/dc/bert-mtt/dataset-distillation-with-attention-labels/src/bert-base-uncased-finetuned-sst2-dev1/checkpoint-6315", "/home/dc/bert-mtt/dataset-distillation-with-attention-labels/src/bert-base-uncased-finetuned-sst2-dev1/checkpoint-16840"]
+    ]
+}
